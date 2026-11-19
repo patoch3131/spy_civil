@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Undercover</title>
+<style>
+:root{--bg:#10282c;--card:#f1f4ee;--ink:#10282c;--mute:#9db3b0;--sig:#ffd23f;--red:#ff7a8a;--bar:#050d0e}
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;background:var(--bg);color:var(--card);font:17px/1.5 "Trebuchet MS","Segoe UI",system-ui,sans-serif;display:flex;justify-content:center}
+main{width:100%;max-width:460px;padding:24px 18px 40px}
+h1{font:800 2.4rem/1 Georgia,"Times New Roman",serif;margin:8px 0 6px;letter-spacing:-.02em}
+h2{font:800 1.6rem/1.2 Georgia,"Times New Roman",serif;margin:6px 0 14px}
+.sub{color:var(--mute);margin:0 0 18px}
+label{display:block;margin:16px 0 6px;font-weight:700}
+label.chk{display:flex;gap:10px;align-items:center;font-weight:400}
+textarea,select,input[type=text]{width:100%;padding:12px;border:2px solid #2c4a4f;border-radius:4px;background:#0b1f22;color:var(--card);font:inherit}
+textarea:focus,select:focus,input:focus{outline:3px solid var(--sig);outline-offset:1px}
+.btn{width:100%;padding:14px;margin-top:14px;border:0;border-radius:4px;background:var(--sig);color:var(--ink);font:700 1rem inherit;cursor:pointer}
+.btn.alt{background:transparent;color:var(--card);border:2px solid #2c4a4f}
+.btn:focus-visible,.pl button:focus-visible{outline:3px solid var(--card);outline-offset:2px}
+.err{color:var(--red);min-height:1.5em;margin:10px 0 0}
+.note{color:var(--mute);font-size:.9rem;margin-top:22px}
+.card{position:relative;overflow:hidden;background:var(--card);color:var(--ink);border-radius:6px;min-height:170px;display:grid;place-items:center;padding:20px}
+.word{font:800 2rem/1.2 Georgia,"Times New Roman",serif;text-align:center}
+.word.long{font:700 1.1rem/1.4 "Trebuchet MS",system-ui,sans-serif}
+.bar{position:absolute;inset:0;background:var(--bar);border:0;width:100%;cursor:pointer}
+.pl{list-style:none;margin:0;padding:0}
+.pl li{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid #2c4a4f}
+.pl li.dead span{text-decoration:line-through;color:var(--mute)}
+.pl button{padding:8px 12px;border:2px solid var(--red);border-radius:4px;background:transparent;color:var(--red);font:700 .9rem inherit;cursor:pointer}
+.tag{color:var(--sig);font-size:.9rem}
+.start{background:#1a3d42;padding:12px 14px;border-radius:4px;margin:0 0 16px}
+</style>
+</head>
+<body>
+<main id="app"></main>
+
+<!-- Les paires de mots vivent dans ce fichier, à côté de index.html -->
+<script src="mots.js"></script>
+<script>
+const $ = s => document.querySelector(s);
+const app = $('#app');
+const esc = t => String(t).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const norm = s => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+const shuffle = a => { a = [...a]; for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+const ROLE = { civil: 'civil', undercover: 'undercover', blanc: 'Mr. White' };
+let cfg = { names: '', u: 1, w: false }, G = null;
+
+function setup(msg = '') {
+  const paires = (typeof MOTS !== 'undefined') ? MOTS.length : 0;
+  app.innerHTML = `
+    <h1>Undercover</h1>
+    <p class="sub">Un mot proche, un intrus, et tout le monde se méfie.</p>
+    <label for="names">Joueurs (un prénom par ligne)</label>
+    <textarea id="names" rows="6">${esc(cfg.names)}</textarea>
+    <label for="u">Nombre d’undercovers</label>
+    <select id="u">${[1,2,3].map(n => `<option ${n === cfg.u ? 'selected' : ''}>${n}</option>`).join('')}</select>
+    <label class="chk"><input type="checkbox" id="w" ${cfg.w ? 'checked' : ''}> Ajouter Mr. White (il n’a pas de mot)</label>
+    <p class="err" role="alert">${msg}</p>
+    <button class="btn" id="go">Distribuer les mots</button>
+    <p class="note">${paires} paires de mots chargées depuis mots.js. Pour en ajouter, modifie ce fichier.</p>`;
+  $('#go').onclick = () => {
+    const names = $('#names').value.split('\n').map(s => s.trim()).filter(Boolean);
+    cfg = { names: names.join('\n'), u: +$('#u').value, w: $('#w').checked };
+    launch(names);
+  };
+}
+
+function launch(names) {
+  const n = names.length, u = cfg.u, w = cfg.w ? 1 : 0;
+  if (typeof MOTS === 'undefined' || !MOTS.length) return setup('Aucune paire trouvée : vérifie que mots.js est à côté de index.html.');
+  if (n < 3) return setup('Il faut au moins 3 joueurs.');
+  if (new Set(names.map(norm)).size < n) return setup('Deux joueurs ont le même prénom.');
+  if (n - u - w <= u + w) return setup('Trop d’intrus : il doit rester plus de civils que d’intrus.');
+  const [a, b] = shuffle(MOTS[Math.floor(Math.random() * MOTS.length)]);
+  const roles = shuffle([...Array(u).fill('undercover'), ...Array(w).fill('blanc'), ...Array(n - u - w).fill('civil')]);
+  G = {
+    pair: { civil: a, undercover: b }, i: 0, round: 0, win: null,
+    players: names.map((name, i) => ({ name, role: roles[i], alive: true,
+      word: roles[i] === 'civil' ? a : roles[i] === 'undercover' ? b : null }))
+  };
+  reveal();
+}
+
+function reveal(shown = false) {
+  const p = G.players[G.i];
+  const body = p.word === null
+    ? `<div class="word long">Tu es Mr. White : tu n’as pas de mot. Écoute les autres et bluffe.</div>`
+    : `<div class="word">${esc(p.word)}</div>`;
+  app.innerHTML = `
+    <p class="sub">Joueur ${G.i + 1} sur ${G.players.length}</p>
+    <h2>${esc(p.name)}</h2>
+    <div class="card">${body}${shown ? '' : '<button class="bar" id="uncover" aria-label="Découvrir mon mot"></button>'}</div>
+    <button class="btn" id="nx">${shown ? 'Cacher et passer au suivant' : 'Voir mon mot'}</button>`;
+  const next = () => { if (!shown) return reveal(true); G.i++; G.i < G.players.length ? reveal() : play(); };
+  $('#nx').onclick = next;
+  if (!shown) $('#uncover').onclick = () => reveal(true);
+}
+
+function play() {
+  G.round++;
+  let starter = '';
+  if (G.round === 1) {
+    const c = G.players.filter(p => p.role !== 'blanc');
+    starter = `<p class="start">${esc(shuffle(c)[0].name)} commence. Chacun donne un indice sur son mot, sans le citer.</p>`;
+  }
+  app.innerHTML = `
+    <h2>Manche ${G.round}</h2>
+    ${starter}
+    <p class="sub">Discutez, puis votez. Appuie sur Éliminer pour le joueur désigné.</p>
+    <ul class="pl">${G.players.map((p, i) => p.alive
+      ? `<li><span>${esc(p.name)}</span><button data-i="${i}">Éliminer</button></li>`
+      : `<li class="dead"><span>${esc(p.name)}</span><span class="tag">${ROLE[p.role]}</span></li>`).join('')}</ul>`;
+  app.querySelectorAll('button[data-i]').forEach(b => b.onclick = () => {
+    const p = G.players[+b.dataset.i];
+    if (confirm(`Éliminer ${p.name} ?`)) eliminate(p);
+  });
+}
+
+function eliminate(p) {
+  p.alive = false;
+  if (p.role === 'blanc') return guess(p);
+  result(p);
+}
+
+function guess(p, msg = '') {
+  app.innerHTML = `
+    <h2>${esc(p.name)} était Mr. White</h2>
+    <p class="sub">Dernière chance : si ${esc(p.name)} devine le mot des civils, Mr. White gagne seul.</p>
+    <label for="g">Mot des civils</label>
+    <input type="text" id="g" autocomplete="off">
+    <button class="btn" id="ok">Valider</button>`;
+  $('#g').focus();
+  const submit = () => {
+    if (norm($('#g').value) === norm(G.pair.civil)) { G.win = 'blanc'; return end(); }
+    result(p, 'Raté : ce n’était pas le bon mot.');
+  };
+  $('#ok').onclick = submit;
+  $('#g').onkeydown = e => { if (e.key === 'Enter') submit(); };
+}
+
+function check() {
+  const a = G.players.filter(p => p.alive);
+  const civ = a.filter(p => p.role === 'civil').length, imp = a.length - civ;
+  if (imp === 0) return 'civils';
+  if (civ <= imp) return 'intrus';
+  return null;
+}
+
+function result(p, extra = '') {
+  app.innerHTML = `
+    <h2>${esc(p.name)} était ${ROLE[p.role]}</h2>
+    ${extra ? `<p class="sub">${extra}</p>` : ''}
+    <button class="btn" id="c">Continuer</button>`;
+  $('#c').onclick = () => { G.win = check(); G.win ? end() : play(); };
+}
+
+function end() {
+  const title = G.win === 'civils' ? 'Les civils gagnent'
+    : G.win === 'intrus' ? 'Les intrus gagnent' : 'Mr. White gagne seul';
+  app.innerHTML = `
+    <h1>${title}</h1>
+    <p class="sub">Mot des civils : <strong>${esc(G.pair.civil)}</strong>. Mot de l’undercover : <strong>${esc(G.pair.undercover)}</strong>.</p>
+    <ul class="pl">${G.players.map(p => `<li><span>${esc(p.name)}</span><span class="tag">${ROLE[p.role]}</span></li>`).join('')}</ul>
+    <button class="btn" id="again">Rejouer avec les mêmes joueurs</button>
+    <button class="btn alt" id="reset">Changer les réglages</button>`;
+  $('#again').onclick = () => launch(G.players.map(p => p.name));
+  $('#reset').onclick = () => setup();
+}
+
+setup();
+</script>
+</body>
+</html>
